@@ -21,13 +21,15 @@ def add_record():
     try:
         loss = float(loss_value.get().replace(',', '.'))
         probability = float(probability_value.get().replace(',', '.'))
-        if not 0 <= probability <= 100 or not 0 <= loss < float('inf'):
+        reduction = float(reduction_value.get().replace(',', '.'))
+        if not 0 <= probability <= 100 or not 0 <= reduction <= 100 or not 0 <= loss < float('inf'):
             raise ValueError
     except ValueError:
-        messagebox.showerror('Ошибка', 'Введите ущерб не меньше 0 и вероятность от 0 до 100%.')
+        messagebox.showerror('Ошибка', 'Введите ущерб не меньше 0, вероятность и снижение от 0 до 100%.')
         return
     expected = loss * probability / 100
-    table.insert('', 'end', values=(object_value.get(), threat.get(), loss_value.get(), probability_value.get(), f'{expected:.2f}', protection_value.get()))
+    residual = expected * (1 - reduction / 100)
+    table.insert('', 'end', values=(object_value.get(), threat.get(), loss_value.get(), probability_value.get(), f'{expected:.2f}', reduction_value.get(), f'{residual:.2f}', protection_value.get()))
 
 
 def show_chart():
@@ -38,15 +40,18 @@ def show_chart():
     values = [table.item(item, 'values') for item in items]
     chart_window = tk.Toplevel(window)
     chart_window.title('Ожидаемый ущерб по угрозам')
-    canvas = tk.Canvas(chart_window, width=800, height=max(220, 75 * len(values) + 60), background='white')
+    canvas = tk.Canvas(chart_window, width=800, height=max(220, 100 * len(values) + 60), background='white')
     canvas.pack(fill='both', expand=True)
     maximum = max(float(row[4]) for row in values) or 1
     for i, row in enumerate(values):
-        y = 30 + i * 75
+        y = 30 + i * 100
         value = float(row[4])
         canvas.create_text(10, y, text=row[1], anchor='w')
         canvas.create_rectangle(10, y + 15, 10 + 550 * value / maximum, y + 35, fill='steelblue')
-        canvas.create_text(570, y + 25, text=f'{value:.2f} руб.', anchor='w')
+        canvas.create_text(570, y + 25, text=f'До: {value:.2f} руб.', anchor='w')
+        residual = float(row[6])
+        canvas.create_rectangle(10, y + 40, 10 + 550 * residual / maximum, y + 60, fill='seagreen')
+        canvas.create_text(570, y + 50, text=f'После: {residual:.2f} руб.', anchor='w')
 
 
 def delete_record():
@@ -64,7 +69,7 @@ def save_report():
     try:
         with open(path, 'w', encoding='utf-8-sig', newline='') as file:
             writer = csv.writer(file, delimiter=';')
-            writer.writerow(['Объект', 'Угроза', 'Ущерб, руб.', 'Вероятность, %', 'Ожидаемый ущерб, руб.', 'Меры защиты'])
+            writer.writerow(['Объект', 'Угроза', 'Ущерб, руб.', 'Вероятность, %', 'Ожидаемый ущерб, руб.', 'Снижение, %', 'Остаточный риск, руб.', 'Меры защиты'])
             for item in table.get_children():
                 writer.writerow(table.item(item, 'values'))
         messagebox.showinfo('Отчёт', 'Отчёт сохранён.')
@@ -83,11 +88,12 @@ threat = tk.StringVar(value=next(iter(THREATS)))
 object_value = tk.StringVar()
 loss_value = tk.StringVar()
 probability_value = tk.StringVar()
+reduction_value = tk.StringVar(value='0')
 protection_value = tk.StringVar()
 
 for row, (title, value) in enumerate([
     ('Угроза:', threat), ('Объект:', object_value), ('Ущерб, руб.:', loss_value),
-    ('Вероятность, %:', probability_value), ('Меры защиты:', protection_value)
+    ('Вероятность, %:', probability_value), ('Снижение риска мерами, %:', reduction_value), ('Меры защиты:', protection_value)
 ]):
     ttk.Label(form, text=title).grid(row=row, column=0, sticky='w', padx=(0, 10), pady=4)
     if row == 0:
@@ -106,13 +112,16 @@ ttk.Button(buttons, text='Сохранить отчёт', command=save_report).p
 
 frame = ttk.Frame(window, padding=10)
 frame.pack(fill='both', expand=True)
-columns = ('object', 'threat', 'loss', 'probability', 'risk', 'protection')
+columns = ('object', 'threat', 'loss', 'probability', 'risk', 'reduction', 'residual', 'protection')
 table = ttk.Treeview(frame, columns=columns, show='headings')
-for column, title, width in zip(columns, ['Объект', 'Угроза', 'Ущерб, руб.', 'Вероятность, %', 'Ожидаемый ущерб, руб.', 'Меры защиты'], [150, 200, 90, 110, 145, 270]):
+for column, title, width in zip(columns, ['Объект', 'Угроза', 'Ущерб, руб.', 'Вероятность, %', 'Ожидаемый ущерб, руб.', 'Снижение, %', 'Остаточный риск, руб.', 'Меры защиты'], [130, 180, 90, 100, 145, 90, 145, 250]):
     table.heading(column, text=title)
     table.column(column, width=width, minwidth=70)
 scroll = ttk.Scrollbar(frame, orient='vertical', command=table.yview)
 table.configure(yscrollcommand=scroll.set)
+hscroll = ttk.Scrollbar(window, orient='horizontal', command=table.xview)
+table.configure(xscrollcommand=hscroll.set)
+hscroll.pack(side='bottom', fill='x')
 table.pack(side='left', fill='both', expand=True)
 scroll.pack(side='right', fill='y')
 choose_threat()
