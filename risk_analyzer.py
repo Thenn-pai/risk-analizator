@@ -87,9 +87,9 @@ def refresh():
 
 
 def delete_record():
-    selected = risk_table.selection() or comparison_table.selection()
+    selected = comparison_table.selection()
     if not selected:
-        messagebox.showinfo('Удаление', 'Выберите строку в таблице рисков или сравнения.')
+        messagebox.showinfo('Удаление', 'Выберите строку в таблице сравнения.')
         return
     for index in sorted((int(i) for i in selected), reverse=True):
         del records[index]
