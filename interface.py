@@ -6,9 +6,10 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 
 from calculations import calculate, number
-from dialogs import edit_object_description, edit_threat, insert_template
+from dialogs import edit_object_description, edit_record as edit_record_dialog, edit_threat, insert_template
 from project_io import read_project_data, save_project_data
 from reporting import write_report
+import risk_matrix
 
 
 def fill_threat(event=None):
@@ -31,8 +32,8 @@ def add_record():
         after_loss = number(after_loss_var.get(), 'Ущерб после мер')
         after_probability = number(after_prob_var.get(), 'Вероятность после мер', 100)
         cost = number(cost_var.get(), 'Стоимость мер')
-        if not variant_var.get().strip() or not measure_var.get().strip():
-            raise ValueError('Укажите название варианта и меры защиты.')
+        if not obj_var.get().strip() or not variant_var.get().strip() or not measure_var.get().strip():
+            raise ValueError('Укажите объект, название варианта и меры защиты.')
         before, after = calculate(loss, probability, after_loss, after_probability)
         if not math.isfinite(before) or not math.isfinite(after):
             raise ValueError('Слишком большое значение ущерба.')
@@ -63,6 +64,20 @@ def delete_record():
     for index in sorted((int(i) for i in selected), reverse=True):
         del records[index]
     refresh()
+
+
+def change_record():
+    selected = comparison_table.selection()
+    if len(selected) != 1:
+        messagebox.showinfo('Изменение', 'Выберите одну оценку в таблице сравнения.')
+        return
+    index = int(selected[0])
+
+    def save(item):
+        records[index] = item
+        refresh()
+
+    edit_record_dialog(window, deepcopy(records[index]), list(THREATS), save)
 
 
 def show_chart():
@@ -121,9 +136,25 @@ def rename_node():
     node = selected_node()
     if node is None:
         return
-    name = simpledialog.askstring('Изменить название', 'Название:', initialvalue=structure_tree.item(node, 'text'), parent=window)
-    if name and name.strip():
-        structure_tree.item(node, text=name.strip())
+    old_name = structure_tree.item(node, 'text')
+    name = simpledialog.askstring('Изменить название', 'Название:', initialvalue=old_name, parent=window)
+    if name and name.strip() and name.strip() != old_name:
+        name = name.strip()
+        if structure_tree.item(node, 'values')[0] == 'Объект':
+            if object_names(root_node).count(old_name) == 1:
+                for item in THREATS.values():
+                    if item['object'] == old_name:
+                        item['object'] = name
+                for record in records:
+                    if record['object'] == old_name:
+                        record['object'] = name
+                if obj_var.get() == old_name:
+                    obj_var.set(name)
+                refresh_threats()
+                refresh()
+            else:
+                messagebox.showinfo('Переименование', 'В структуре несколько объектов с таким именем. Название в угрозах и оценках не изменено.')
+        structure_tree.item(node, text=name)
         structure_changed = True
 
 
@@ -230,6 +261,9 @@ def refresh_threats():
         threat_table.insert('', 'end', iid=name, values=(
             name, item['object'], loss, item['vulnerabilities'], item['measures']))
     threat_combo.configure(values=list(THREATS))
+    matrix_threat_combo.configure(values=list(THREATS))
+    if matrix_threat.get() not in THREATS:
+        matrix_threat.set(next(iter(THREATS), ''))
 
 
 def save_threat(old_name, name, item):
@@ -249,6 +283,12 @@ def save_threat(old_name, name, item):
         for record in records:
             if record['threat'] == old_name:
                 record['threat'] = name
+        for point in matrix_records:
+            if point['threat'] == old_name:
+                point['threat'] = name
+        if matrix_threat.get() == old_name:
+            matrix_threat.set(name)
+        refresh_matrix()
         refresh()
     if selected:
         threat.set(name)
@@ -311,32 +351,95 @@ def delete_threat():
     refresh_threats()
 
 
+def refresh_matrix(event=None):
+    matrix_table.delete(*matrix_table.get_children())
+    for index, point in enumerate(matrix_records):
+        matrix_table.insert('', 'end', iid=str(index), values=(
+            index + 1, point['threat'], point['p'], point['i'],
+            risk_matrix.response(point['p'], point['i'])))
+    risk_matrix.draw(matrix_canvas, matrix_records)
+
+
+def add_matrix_point():
+    if matrix_threat.get() not in THREATS:
+        messagebox.showinfo('Матрица рисков', 'Выберите угрозу из каталога.')
+        return
+    if matrix_p.get() not in ('1', '2', '3', '4', '5') or matrix_i.get() not in ('1', '2', '3', '4', '5'):
+        messagebox.showinfo('Матрица рисков', 'Выберите баллы P и I от 1 до 5.')
+        return
+    matrix_records.append({'threat': matrix_threat.get(), 'p': int(matrix_p.get()),
+                           'i': int(matrix_i.get())})
+    refresh_matrix()
+
+
+def delete_matrix_point():
+    selected = matrix_table.selection()
+    if not selected:
+        messagebox.showinfo('Матрица рисков', 'Выберите строку в таблице.')
+        return
+    for index in sorted((int(value) for value in selected), reverse=True):
+        del matrix_records[index]
+    refresh_matrix()
+
+
+def draft_values():
+    return {'threat': threat.get(), 'object': obj_var.get(), 'loss': loss_var.get(),
+            'probability': prob_var.get(), 'variant': variant_var.get(), 'measure': measure_var.get(),
+            'after_loss': after_loss_var.get(), 'after_probability': after_prob_var.get(),
+            'cost': cost_var.get()}
+
+
+def restore_draft(draft):
+    for variable, key in [(threat, 'threat'), (obj_var, 'object'), (loss_var, 'loss'),
+                          (prob_var, 'probability'), (variant_var, 'variant'), (measure_var, 'measure'),
+                          (after_loss_var, 'after_loss'), (after_prob_var, 'after_probability'),
+                          (cost_var, 'cost')]:
+        variable.set(draft[key])
+
+
+def project_state():
+    return {'company': structure_tree.item(root_node, 'text'), 'structure': export_tree(root_node),
+            'records': deepcopy(records), 'description': description_text.get('1.0', 'end-1c'),
+            'threats': deepcopy(THREATS), 'matrix': deepcopy(matrix_records), 'draft': draft_values()}
+
+
+def close_app():
+    if project_state() != saved_snapshot:
+        choice = messagebox.askyesnocancel('Выход', 'Сохранить изменения перед выходом?')
+        if choice is None:
+            return
+        if choice and not save_project():
+            return
+    window.destroy()
+
+
 def save_project():
-    global structure_changed
+    global structure_changed, saved_snapshot
     path = filedialog.asksaveasfilename(title='Сохранить проект', defaultextension='.json', filetypes=[('Проект JSON', '*.json')])
     if not path:
-        return
+        return False
     try:
-        description = description_text.get('1.0', 'end-1c')
-        save_project_data(path, structure_tree.item(root_node, 'text'), export_tree(root_node),
-                          records, description, THREATS)
+        state = project_state()
+        save_project_data(path, state['company'], state['structure'], state['records'],
+                          state['description'], state['threats'], state['matrix'], state['draft'])
         structure_changed = False
+        saved_snapshot = deepcopy(state)
         messagebox.showinfo('Проект', 'Проект сохранён.')
-    except OSError as error:
+        return True
+    except (OSError, ValueError) as error:
         messagebox.showerror('Ошибка', str(error))
+        return False
 
 
 def open_project():
-    global structure_changed
+    global structure_changed, saved_snapshot
     path = filedialog.askopenfilename(title='Открыть проект', filetypes=[('Проект JSON', '*.json')])
     if not path:
         return
-    has_data = (records or description_text.get('1.0', 'end-1c').strip()
-                or structure_changed or THREATS != DEFAULT_THREATS)
-    if has_data and not messagebox.askyesno('Открыть проект', 'Текущие данные будут заменены. Продолжить?'):
+    if project_state() != saved_snapshot and not messagebox.askyesno('Открыть проект', 'Несохранённые изменения будут потеряны. Продолжить?'):
         return
     try:
-        company, structure, loaded_records, description, loaded_threats = read_project_data(path)
+        company, structure, loaded_records, description, loaded_threats, loaded_matrix, draft = read_project_data(path)
         if structure is not None:
             structure_tree.delete(*structure_tree.get_children(root_node))
             structure_tree.item(root_node, text=company)
@@ -347,11 +450,16 @@ def open_project():
         refresh_threats()
         threat.set(next(iter(THREATS), ''))
         fill_threat()
+        if draft is not None:
+            restore_draft(draft)
         description_text.delete('1.0', 'end')
         description_text.insert('1.0', description)
         records[:] = loaded_records
+        matrix_records[:] = loaded_matrix
         refresh()
+        refresh_matrix()
         structure_changed = False
+        saved_snapshot = deepcopy(project_state())
     except (OSError, ValueError, KeyError, TypeError) as error:
         messagebox.showerror('Ошибка открытия', str(error))
 
@@ -362,7 +470,8 @@ def save_report():
         return
     try:
         description = description_text.get('1.0', 'end-1c')
-        write_report(path, structure_tree.item(root_node, 'text'), structure_lines(root_node, 1), THREATS, records, description)
+        write_report(path, structure_tree.item(root_node, 'text'), structure_lines(root_node, 1),
+                     THREATS, records, description, matrix_records)
         messagebox.showinfo('Отчёт', 'Отчёт сохранён. Его можно открыть в Word.')
     except OSError as error:
         messagebox.showerror('Ошибка', str(error))
@@ -390,12 +499,14 @@ def start(threats, initial_structure):
     global THREATS, DEFAULT_THREATS, window, records, notebook, structure_tree, root_node
     global risk_tab, threat, obj_var, loss_var, prob_var, variant_var, measure_var
     global after_loss_var, after_prob_var, cost_var, risk_table, comparison_table, description_text
-    global threat_table, threat_combo, object_descriptions, structure_changed
+    global threat_table, threat_combo, object_descriptions, structure_changed, saved_snapshot
+    global matrix_records, matrix_table, matrix_canvas, matrix_threat, matrix_p, matrix_i, matrix_threat_combo
     THREATS = {name: {'object': obj, 'loss': loss, 'vulnerabilities': '', 'measures': measures}
                for name, (obj, loss, measures) in threats.items()}
     DEFAULT_THREATS = deepcopy(THREATS)
     object_descriptions = {}
     structure_changed = False
+    matrix_records = []
     INITIAL_STRUCTURE = initial_structure
     window = tk.Tk()
     window.title('Анализатор рисков — ПАО «Ростелеком»')
@@ -415,7 +526,8 @@ def start(threats, initial_structure):
     threat_tab = ttk.Frame(notebook)
     risk_tab = ttk.Frame(notebook)
     comparison_tab = ttk.Frame(notebook)
-    for tab, title in [(structure_tab, 'Структура'), (description_tab, 'Описание предприятия'), (threat_tab, 'Угрозы и защита'), (risk_tab, 'Оценка рисков'), (comparison_tab, 'Сравнение мер')]:
+    matrix_tab = ttk.Frame(notebook)
+    for tab, title in [(structure_tab, 'Структура'), (description_tab, 'Описание предприятия'), (threat_tab, 'Угрозы и защита'), (risk_tab, 'Оценка рисков'), (comparison_tab, 'Сравнение мер'), (matrix_tab, 'Матрица рисков')]:
         notebook.add(tab, text=title)
 
     description_frame = ttk.Frame(description_tab, padding=8)
@@ -494,8 +606,55 @@ def start(threats, initial_structure):
     bar = ttk.Frame(comparison_tab, padding=6)
     bar.pack(fill='x')
     ttk.Button(bar, text='Показать диаграмму', command=show_chart).pack(side='left', padx=3)
+    ttk.Button(bar, text='Изменить оценку', command=change_record).pack(side='left', padx=3)
     ttk.Button(bar, text='Удалить выбранную строку', command=delete_record).pack(side='left', padx=3)
     comparison_table = make_table(comparison_tab, [('Угроза', 210), ('Вариант', 130), ('Меры', 260), ('До, руб.', 110), ('После, руб.', 110), ('Снижение, руб.', 120), ('Стоимость, руб.', 120)])
+
+    matrix_form = ttk.Frame(matrix_tab, padding=6)
+    matrix_form.pack(fill='x')
+    matrix_threat = tk.StringVar(value=next(iter(THREATS), ''))
+    matrix_p = tk.StringVar()
+    matrix_i = tk.StringVar()
+    ttk.Label(matrix_form, text='Угроза:').grid(row=0, column=0, sticky='w', padx=(0, 4))
+    matrix_threat_combo = ttk.Combobox(matrix_form, textvariable=matrix_threat, values=list(THREATS), state='readonly')
+    matrix_threat_combo.grid(row=0, column=1, sticky='ew', padx=(0, 6))
+    ttk.Label(matrix_form, text='P:').grid(row=0, column=2)
+    ttk.Combobox(matrix_form, textvariable=matrix_p, values=('1', '2', '3', '4', '5'),
+                 width=3, state='readonly').grid(row=0, column=3, padx=(2, 6))
+    ttk.Label(matrix_form, text='I:').grid(row=0, column=4)
+    ttk.Combobox(matrix_form, textvariable=matrix_i, values=('1', '2', '3', '4', '5'),
+                 width=3, state='readonly').grid(row=0, column=5, padx=(2, 6))
+    ttk.Button(matrix_form, text='Добавить точку', command=add_matrix_point).grid(row=0, column=6, padx=3)
+    ttk.Button(matrix_form, text='Удалить точку', command=delete_matrix_point).grid(row=0, column=7, padx=3)
+    matrix_form.columnconfigure(1, weight=1)
+    ttk.Label(matrix_tab, text='P — вероятность, I — тяжесть последствий. Баллы 1–5 задаются вручную.').pack(anchor='w', padx=8)
+    matrix_body = ttk.Frame(matrix_tab, padding=6)
+    matrix_body.pack(fill='both', expand=True)
+    matrix_body.columnconfigure(0, weight=1, minsize=220)
+    matrix_body.columnconfigure(1, weight=2, minsize=350)
+    matrix_body.rowconfigure(0, weight=1)
+    list_frame = ttk.Frame(matrix_body)
+    list_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 6))
+    list_frame.columnconfigure(0, weight=1)
+    list_frame.rowconfigure(0, weight=1)
+    matrix_table = ttk.Treeview(list_frame, columns=('number', 'threat', 'p', 'i', 'response'), show='headings')
+    for key, title, width in [('number', '№', 35), ('threat', 'Угроза', 170), ('p', 'P', 35),
+                              ('i', 'I', 35), ('response', 'Реагирование', 140)]:
+        matrix_table.heading(key, text=title)
+        matrix_table.column(key, width=width, minwidth=30)
+    matrix_table.grid(row=0, column=0, sticky='nsew')
+    matrix_scroll = ttk.Scrollbar(list_frame, orient='vertical', command=matrix_table.yview)
+    matrix_scroll.grid(row=0, column=1, sticky='ns')
+    matrix_horizontal = ttk.Scrollbar(list_frame, orient='horizontal', command=matrix_table.xview)
+    matrix_horizontal.grid(row=1, column=0, sticky='ew')
+    matrix_table.configure(yscrollcommand=matrix_scroll.set, xscrollcommand=matrix_horizontal.set)
+    matrix_canvas = tk.Canvas(matrix_body, width=550, height=400, bg='white')
+    matrix_canvas.grid(row=0, column=1, sticky='nsew')
+    matrix_canvas.bind('<Configure>', lambda event: risk_matrix.draw(matrix_canvas, matrix_records))
+
     refresh_threats()
     fill_threat()
+    refresh_matrix()
+    saved_snapshot = deepcopy(project_state())
+    window.protocol('WM_DELETE_WINDOW', close_app)
     window.mainloop()

@@ -38,11 +38,35 @@ def valid_threats(threats):
             item['loss'] = number(str(item['loss']), 'Ущерб')
 
 
-def save_project_data(path, company, structure, records, description='', threats=None):
-    data = {'version': 3 if threats is not None else 2, 'company': company,
+def valid_matrix(matrix):
+    if not isinstance(matrix, list):
+        raise ValueError('Неверная матрица рисков.')
+    for item in matrix:
+        if not isinstance(item, dict) or not isinstance(item.get('threat'), str) or not item['threat'].strip():
+            raise ValueError('Неверная угроза в матрице.')
+        for key in ('p', 'i'):
+            if type(item.get(key)) is not int or not 1 <= item[key] <= 5:
+                raise ValueError('Балл в матрице должен быть от 1 до 5.')
+
+
+def valid_draft(draft):
+    keys = ('threat', 'object', 'loss', 'probability', 'variant', 'measure',
+            'after_loss', 'after_probability', 'cost')
+    if not isinstance(draft, dict) or not all(isinstance(draft.get(key), str) for key in keys):
+        raise ValueError('Неверные данные формы оценки.')
+
+
+def save_project_data(path, company, structure, records, description='', threats=None, matrix=None, draft=None):
+    version = 4 if matrix is not None or draft is not None else (3 if threats is not None else 2)
+    if version == 4 and (threats is None or matrix is None or draft is None):
+        raise ValueError('Для сохранения нужны каталог угроз, матрица и данные формы.')
+    data = {'version': version, 'company': company,
             'structure': structure, 'records': records, 'description': description}
     if threats is not None:
         data['threats'] = threats
+    if version == 4:
+        data['matrix'] = matrix
+        data['draft'] = draft
     with open(path, 'w', encoding='utf-8') as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
 
@@ -58,19 +82,28 @@ def read_project_data(path):
         company = None
         description = ''
         threats = None
-    elif isinstance(data, dict) and data.get('version') in (2, 3):
+        matrix = []
+        draft = None
+    elif isinstance(data, dict) and data.get('version') in (2, 3, 4):
         records = data.get('records')
         structure = data.get('structure')
         company = data.get('company')
         description = data.get('description', '')
-        threats = data.get('threats') if data['version'] == 3 else None
+        threats = data.get('threats') if data['version'] in (3, 4) else None
+        matrix = data.get('matrix') if data['version'] == 4 else []
+        draft = data.get('draft') if data['version'] == 4 else None
         if not isinstance(company, str) or not company.strip():
             raise ValueError('Не указано название организации.')
         if not isinstance(description, str):
             raise ValueError('Неверное описание предприятия.')
         valid_tree(structure)
-        if data['version'] == 3:
+        if data['version'] in (3, 4):
             valid_threats(threats)
+        if data['version'] == 4:
+            valid_matrix(matrix)
+            valid_draft(draft)
+            if draft['threat'] and draft['threat'] not in threats:
+                raise ValueError('Угроза в форме отсутствует в каталоге.')
     else:
         raise ValueError('Неверный формат файла.')
 
@@ -81,4 +114,4 @@ def read_project_data(path):
             raise ValueError('В проекте отсутствуют данные записи.')
         for key in ('loss', 'probability', 'after_loss', 'after_probability', 'cost'):
             record[key] = number(str(record[key]), key, 100 if 'probability' in key else None)
-    return company, structure, records, description, threats
+    return company, structure, records, description, threats, matrix, draft

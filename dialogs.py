@@ -3,7 +3,9 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from calculations import number
+import math
+
+from calculations import calculate, number
 
 
 def insert_template(parent, target, fields):
@@ -126,5 +128,58 @@ def edit_threat(parent, old_name, old_data, objects, save):
 
     buttons = ttk.Frame(frame)
     buttons.grid(row=6, column=0, columnspan=2, sticky='w')
+    ttk.Button(buttons, text='Сохранить', command=finish).pack(side='left', padx=(0, 5))
+    ttk.Button(buttons, text='Отмена', command=dialog.destroy).pack(side='left')
+
+
+def edit_record(parent, record, threat_names, save):
+    dialog = tk.Toplevel(parent)
+    dialog.title('Изменить оценку')
+    dialog.transient(parent)
+    dialog.grab_set()
+    frame = ttk.Frame(dialog, padding=10)
+    frame.pack(fill='both', expand=True)
+    fields = [('Угроза', 'threat'), ('Объект', 'object'),
+              ('Потери за инцидент, руб.', 'loss'), ('Вероятность за год, %', 'probability'),
+              ('Вариант мер', 'variant'), ('Меры защиты', 'measure'),
+              ('Ущерб после мер, руб.', 'after_loss'),
+              ('Вероятность после мер, %', 'after_probability'), ('Стоимость мер, руб.', 'cost')]
+    entries = {}
+    names = list(threat_names)
+    if record['threat'] not in names:
+        names.append(record['threat'])
+    for index, (label, key) in enumerate(fields):
+        ttk.Label(frame, text=label + ':').grid(row=index, column=0, sticky='w', padx=(0, 8), pady=3)
+        if key == 'threat':
+            entry = ttk.Combobox(frame, values=names, state='readonly', width=55)
+            entry.set(record[key])
+        else:
+            entry = ttk.Entry(frame, width=55)
+            entry.insert(0, str(record[key]))
+        entry.grid(row=index, column=1, sticky='ew', pady=3)
+        entries[key] = entry
+    frame.columnconfigure(1, weight=1)
+
+    def finish():
+        try:
+            item = {key: entries[key].get().strip() for _, key in fields}
+            if not all(item[key] for key in ('threat', 'object', 'variant', 'measure')):
+                raise ValueError('Укажите угрозу, объект, вариант и меры защиты.')
+            for key, label in [('loss', 'Ущерб'), ('probability', 'Вероятность'),
+                               ('after_loss', 'Ущерб после мер'),
+                               ('after_probability', 'Вероятность после мер'), ('cost', 'Стоимость мер')]:
+                item[key] = number(item[key], label, 100 if 'probability' in key else None)
+            before, after = calculate(item['loss'], item['probability'],
+                                      item['after_loss'], item['after_probability'])
+            if not math.isfinite(before) or not math.isfinite(after):
+                raise ValueError('Слишком большое значение ущерба.')
+            save(item)
+        except ValueError as error:
+            messagebox.showerror('Ошибка ввода', str(error), parent=dialog)
+            return
+        dialog.destroy()
+
+    buttons = ttk.Frame(frame)
+    buttons.grid(row=len(fields), column=0, columnspan=2, sticky='w', pady=(8, 0))
     ttk.Button(buttons, text='Сохранить', command=finish).pack(side='left', padx=(0, 5))
     ttk.Button(buttons, text='Отмена', command=dialog.destroy).pack(side='left')
