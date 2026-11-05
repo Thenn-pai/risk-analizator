@@ -44,6 +44,19 @@ def make_figures(records, points):
         axis.legend()
         figures.append(('Ожидаемый ущерб до и после мер', figure))
 
+        figure = Figure(figsize=(9, 4.7), layout='tight')
+        axis = figure.subplots()
+        for number, (before, after) in zip(numbers, values):
+            axis.plot([0, 1], [before, after], marker='o', label=f'Оценка № {number}')
+        axis.set_xticks([0, 1], ['До мер', 'После мер'])
+        axis.set_ylabel('Ожидаемый ущерб за год, руб.')
+        axis.set_title('Риск до и после мер')
+        axis.yaxis.set_major_formatter(FuncFormatter(money))
+        axis.set_ylim(bottom=0)
+        axis.grid(alpha=0.25)
+        axis.legend()
+        figures.append(('Линейный график риска до и после мер', figure))
+
         figure = Figure(figsize=(9, height), layout='tight')
         axis = figure.subplots()
         changes = [before - after for before, after in values]
