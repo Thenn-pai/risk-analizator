@@ -11,9 +11,13 @@ def write_report(path, company, structure_lines, threats, records, description='
         file.write(company + '\n')
         for line in structure_lines:
             file.write(line + '\n')
-        file.write('\nУГРОЗЫ И МЕРЫ ЗАЩИТЫ\n')
-        for name, (obj, loss, protection) in threats.items():
-            file.write(f'{name}; объект: {obj}; ущерб: {loss} руб.; меры: {protection}\n')
+        file.write('\nУГРОЗЫ, УЯЗВИМОСТИ И МЕРЫ ЗАЩИТЫ\n')
+        for name, item in threats.items():
+            loss = 'не указан' if item['loss'] is None else f"{item['loss']} руб."
+            vulnerabilities = item['vulnerabilities'] or 'не указаны'
+            measures = item['measures'] or 'не указаны'
+            file.write(f"{name}; объект: {item['object']}; ущерб: {loss}; "
+                       f"уязвимости: {vulnerabilities}; меры: {measures}\n")
         file.write('\nОЦЕНКА РИСКОВ И СРАВНЕНИЕ ВАРИАНТОВ\n')
         if not records:
             file.write('Нет добавленных оценок.\n')
