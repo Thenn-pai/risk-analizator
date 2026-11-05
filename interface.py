@@ -81,28 +81,38 @@ def change_record():
 
 
 def show_chart():
-    if not records:
-        messagebox.showinfo('Диаграмма', 'Добавьте хотя бы один вариант.')
+    if not records and not matrix_records:
+        messagebox.showinfo('Диаграммы', 'Добавьте оценку или точку матрицы.')
+        return
+    try:
+        from charts import make_figures
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        figures = make_figures(records, matrix_records)
+    except ModuleNotFoundError:
+        messagebox.showerror('Библиотеки', 'Установите библиотеки командой:\npython -m pip install -r requirements.txt')
         return
     chart = tk.Toplevel(window)
-    chart.title('Сравнение риска до и после мер')
+    chart.title('Диаграммы рисков')
+    chart.geometry('1000x700')
+    selector = ttk.Combobox(chart, state='readonly',
+                            values=[f'{i}. {name}' for i, (name, _) in enumerate(figures, 1)])
+    selector.pack(fill='x', padx=8, pady=8)
+    ttk.Label(chart, text='Номера оценок соответствуют строкам таблицы «Сравнение мер», '
+              'номера точек — строкам матрицы рисков.').pack(anchor='w', padx=8)
     frame = ttk.Frame(chart)
     frame.pack(fill='both', expand=True)
-    canvas = tk.Canvas(frame, width=780, height=500, bg='white')
-    scroll = ttk.Scrollbar(frame, orient='vertical', command=canvas.yview)
-    canvas.configure(yscrollcommand=scroll.set)
-    canvas.pack(side='left', fill='both', expand=True)
-    scroll.pack(side='right', fill='y')
-    canvas.configure(scrollregion=(0, 0, 780, max(500, 100 * len(records) + 40)))
-    pairs = [calculate(r['loss'], r['probability'], r['after_loss'], r['after_probability']) for r in records]
-    maximum = max(max(pair) for pair in pairs) or 1
-    for i, (r, pair) in enumerate(zip(records, pairs)):
-        y = 25 + i * 100
-        canvas.create_text(10, y, anchor='w', text=r['threat'] + ' / ' + r['variant'])
-        for j, (value, color, label) in enumerate(zip(pair, ('steelblue', 'seagreen'), ('До', 'После'))):
-            top = y + 12 + j * 25
-            canvas.create_rectangle(10, top, 10 + 500 * value / maximum, top + 16, fill=color)
-            canvas.create_text(525, top + 8, anchor='w', text=f'{label}: {value:.2f} руб.')
+
+    def select_figure(event=None):
+        for child in frame.winfo_children():
+            child.destroy()
+        plot = FigureCanvasTkAgg(figures[selector.current()][1], master=frame)
+        plot.draw()
+        plot.get_tk_widget().pack(fill='both', expand=True)
+        chart.current_plot = plot
+
+    selector.bind('<<ComboboxSelected>>', select_figure)
+    selector.current(0)
+    select_figure()
 
 
 def selected_node():
@@ -465,14 +475,18 @@ def open_project():
 
 
 def save_report():
-    path = filedialog.asksaveasfilename(title='Сохранить отчёт', defaultextension='.txt', filetypes=[('Текстовый документ', '*.txt')])
+    path = filedialog.asksaveasfilename(title='Сохранить отчёт', defaultextension='.docx',
+                                       filetypes=[('Документ Word', '*.docx'), ('Текстовый документ', '*.txt')])
     if not path:
         return
     try:
         description = description_text.get('1.0', 'end-1c')
         write_report(path, structure_tree.item(root_node, 'text'), structure_lines(root_node, 1),
                      THREATS, records, description, matrix_records)
-        messagebox.showinfo('Отчёт', 'Отчёт сохранён. Его можно открыть в Word.')
+        messagebox.showinfo('Отчёт', 'Отчёт сохранён.' +
+                            (' В текстовом файле диаграмм нет.' if path.lower().endswith('.txt') else ''))
+    except ModuleNotFoundError:
+        messagebox.showerror('Библиотеки', 'Установите библиотеки командой:\npython -m pip install -r requirements.txt')
     except OSError as error:
         messagebox.showerror('Ошибка', str(error))
 
@@ -605,7 +619,7 @@ def start(threats, initial_structure):
 
     bar = ttk.Frame(comparison_tab, padding=6)
     bar.pack(fill='x')
-    ttk.Button(bar, text='Показать диаграмму', command=show_chart).pack(side='left', padx=3)
+    ttk.Button(bar, text='Показать диаграммы', command=show_chart).pack(side='left', padx=3)
     ttk.Button(bar, text='Изменить оценку', command=change_record).pack(side='left', padx=3)
     ttk.Button(bar, text='Удалить выбранную строку', command=delete_record).pack(side='left', padx=3)
     comparison_table = make_table(comparison_tab, [('Угроза', 210), ('Вариант', 130), ('Меры', 260), ('До, руб.', 110), ('После, руб.', 110), ('Снижение, руб.', 120), ('Стоимость, руб.', 120)])
