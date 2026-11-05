@@ -46,6 +46,24 @@ def make_figures(records, points):
 
         figure = Figure(figsize=(9, 4.7), layout='tight')
         axis = figure.subplots()
+        bars_before = axis.bar([n - 0.2 for n in positions], [v[0] for v in values], 0.4,
+                               label='До мер', color='#4779a4')
+        bars_after = axis.bar([n + 0.2 for n in positions], [v[1] for v in values], 0.4,
+                              label='После мер', color='#4c9165')
+        axis.bar_label(bars_before, labels=[money(v[0]) for v in values], padding=3, fontsize=8, rotation=45)
+        axis.bar_label(bars_after, labels=[money(v[1]) for v in values], padding=3, fontsize=8, rotation=45)
+        axis.margins(y=0.25)
+        axis.set_xticks(positions, numbers)
+        axis.set_xlabel('Номер оценки')
+        axis.set_ylabel('Ожидаемый ущерб за год, руб.')
+        axis.set_title('Риск до и после мер')
+        axis.yaxis.set_major_formatter(FuncFormatter(money))
+        axis.grid(axis='y', alpha=0.25)
+        axis.legend()
+        figures.append(('Столбчатая диаграмма риска до и после мер', figure))
+
+        figure = Figure(figsize=(9, 4.7), layout='tight')
+        axis = figure.subplots()
         for number, (before, after) in zip(numbers, values):
             axis.plot([0, 1], [before, after], marker='o', label=f'Оценка № {number}')
         axis.set_xticks([0, 1], ['До мер', 'После мер'])
