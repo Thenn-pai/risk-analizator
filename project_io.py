@@ -19,8 +19,9 @@ def valid_tree(items, level=0):
             raise ValueError('У объекта не может быть вложенных элементов.')
 
 
-def save_project_data(path, company, structure, records):
-    data = {'version': 2, 'company': company, 'structure': structure, 'records': records}
+def save_project_data(path, company, structure, records, description=''):
+    data = {'version': 2, 'company': company, 'structure': structure,
+            'records': records, 'description': description}
     with open(path, 'w', encoding='utf-8') as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
 
@@ -34,12 +35,16 @@ def read_project_data(path):
         records = data
         structure = None
         company = None
+        description = ''
     elif isinstance(data, dict) and data.get('version') == 2:
         records = data.get('records')
         structure = data.get('structure')
         company = data.get('company')
+        description = data.get('description', '')
         if not isinstance(company, str) or not company.strip():
             raise ValueError('Не указано название организации.')
+        if not isinstance(description, str):
+            raise ValueError('Неверное описание предприятия.')
         valid_tree(structure)
     else:
         raise ValueError('Неверный формат файла.')
@@ -51,4 +56,4 @@ def read_project_data(path):
             raise ValueError('В проекте отсутствуют данные записи.')
         for key in ('loss', 'probability', 'after_loss', 'after_probability', 'cost'):
             record[key] = number(str(record[key]), key, 100 if 'probability' in key else None)
-    return company, structure, records
+    return company, structure, records, description

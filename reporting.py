@@ -3,9 +3,11 @@
 from calculations import calculate
 
 
-def write_report(path, company, structure_lines, threats, records):
+def write_report(path, company, structure_lines, threats, records, description=''):
     with open(path, 'w', encoding='utf-8-sig') as file:
-        file.write('ОТЧЁТ ПО АНАЛИЗУ РИСКОВ\n\nСТРУКТУРА\n')
+        file.write('ОТЧЁТ ПО АНАЛИЗУ РИСКОВ\n\nОПИСАНИЕ МОДЕЛИ ПРЕДПРИЯТИЯ\n')
+        file.write((description.rstrip() if description.strip() else 'Не указано.') + '\n')
+        file.write('\nСТРУКТУРА\n')
         file.write(company + '\n')
         for line in structure_lines:
             file.write(line + '\n')

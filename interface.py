@@ -173,7 +173,8 @@ def save_project():
     if not path:
         return
     try:
-        save_project_data(path, structure_tree.item(root_node, 'text'), export_tree(root_node), records)
+        description = description_text.get('1.0', 'end-1c')
+        save_project_data(path, structure_tree.item(root_node, 'text'), export_tree(root_node), records, description)
         messagebox.showinfo('Проект', 'Проект сохранён.')
     except OSError as error:
         messagebox.showerror('Ошибка', str(error))
@@ -183,14 +184,16 @@ def open_project():
     path = filedialog.askopenfilename(title='Открыть проект', filetypes=[('Проект JSON', '*.json')])
     if not path:
         return
-    if records and not messagebox.askyesno('Открыть проект', 'Текущие несохранённые данные будут заменены. Продолжить?'):
+    if (records or description_text.get('1.0', 'end-1c').strip()) and not messagebox.askyesno('Открыть проект', 'Текущие данные будут заменены. Продолжить?'):
         return
     try:
-        company, structure, loaded_records = read_project_data(path)
+        company, structure, loaded_records, description = read_project_data(path)
         if structure is not None:
             structure_tree.delete(*structure_tree.get_children(root_node))
             structure_tree.item(root_node, text=company)
             import_tree(root_node, structure)
+        description_text.delete('1.0', 'end')
+        description_text.insert('1.0', description)
         records[:] = loaded_records
         refresh()
     except (OSError, ValueError, KeyError, TypeError) as error:
@@ -202,7 +205,8 @@ def save_report():
     if not path:
         return
     try:
-        write_report(path, structure_tree.item(root_node, 'text'), structure_lines(root_node, 1), THREATS, records)
+        description = description_text.get('1.0', 'end-1c')
+        write_report(path, structure_tree.item(root_node, 'text'), structure_lines(root_node, 1), THREATS, records, description)
         messagebox.showinfo('Отчёт', 'Отчёт сохранён. Его можно открыть в Word.')
     except OSError as error:
         messagebox.showerror('Ошибка', str(error))
@@ -229,7 +233,7 @@ def make_table(parent, columns):
 def start(threats, initial_structure):
     global THREATS, window, records, notebook, structure_tree, root_node
     global risk_tab, threat, obj_var, loss_var, prob_var, variant_var, measure_var
-    global after_loss_var, after_prob_var, cost_var, risk_table, comparison_table
+    global after_loss_var, after_prob_var, cost_var, risk_table, comparison_table, description_text
     THREATS = threats
     INITIAL_STRUCTURE = initial_structure
     window = tk.Tk()
@@ -246,11 +250,21 @@ def start(threats, initial_structure):
     notebook = ttk.Notebook(window)
     notebook.pack(fill='both', expand=True, padx=6, pady=6)
     structure_tab = ttk.Frame(notebook)
+    description_tab = ttk.Frame(notebook)
     threat_tab = ttk.Frame(notebook)
     risk_tab = ttk.Frame(notebook)
     comparison_tab = ttk.Frame(notebook)
-    for tab, title in [(structure_tab, 'Структура'), (threat_tab, 'Угрозы и защита'), (risk_tab, 'Оценка рисков'), (comparison_tab, 'Сравнение мер')]:
+    for tab, title in [(structure_tab, 'Структура'), (description_tab, 'Описание предприятия'), (threat_tab, 'Угрозы и защита'), (risk_tab, 'Оценка рисков'), (comparison_tab, 'Сравнение мер')]:
         notebook.add(tab, text=title)
+
+    description_frame = ttk.Frame(description_tab, padding=8)
+    description_frame.pack(fill='both', expand=True)
+    ttk.Label(description_frame, text='Опишите предприятие, его деятельность, подразделения и ИТ-ресурсы:').pack(anchor='w', pady=(0, 8))
+    description_text = tk.Text(description_frame, wrap='word', undo=True)
+    description_scroll = ttk.Scrollbar(description_frame, orient='vertical', command=description_text.yview)
+    description_text.configure(yscrollcommand=description_scroll.set)
+    description_scroll.pack(side='right', fill='y')
+    description_text.pack(side='left', fill='both', expand=True)
 
     structure_bar = ttk.Frame(structure_tab, padding=8)
     structure_bar.pack(fill='x')
